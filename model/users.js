@@ -24,6 +24,22 @@ class User extends Model {
     return 'user_id';
   }
 
+  static get firstNameColumn() {
+    return 'firstName';
+  };
+
+  static get lastNameColumn() {
+    return 'lastName';
+  }
+  lastName
+  static get ageColumn() {
+    return 'age';
+  };
+
+  static get emailColumn() {
+    return 'email';
+  }
+
   // Methods can be defined for model classes just as you would for
   // any JavaScript class. If you want to include the result of these
   // methods in the output json, see `virtualAttributes`.
@@ -43,7 +59,6 @@ class User extends Model {
 
       properties: {
         id: { type: 'integer' },
-        parentId: { type: ['integer', 'null'] },
         firstName: { type: 'string', minLength: 1, maxLength: 255 },
         lastName: { type: 'string', minLength: 1, maxLength: 255 },
         age: { type: 'number' },
