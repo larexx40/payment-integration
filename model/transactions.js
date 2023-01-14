@@ -1,5 +1,5 @@
 const { Model } = require("objection");
-const {generateUniqueTnxRef} = require("../helpers/commonFunctions");
+// const {generateUniqueTnxRef} = require("../helpers/commonFunctions");
 
 
 class Transaction extends Model {
