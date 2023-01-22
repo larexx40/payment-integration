@@ -1,4 +1,5 @@
 const axios = require("axios")
+const transaction = require("../controller/transactions")
 
 require("dotenv").config();
 
@@ -44,8 +45,55 @@ const getAuthToken = async()=>{
 
 }
 
+const validateBankAccount = async(accno, bankcode)=>{
+    
+    let url = process.env.MONNIFY_BASE_URL +`/api/v1/disbursements/account/validate?accountNumber=${accno}&bankCode=${bankcode}`;
+    //fetch token somewhere check expiry
+    //if expire then call getAuthToken()
+    const accessToken = await getAuthToken();
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${accessToken}`
+        },
+        url,
+    }
+
+    try {
+        const response = await axios(options);
+        if (response.data.requestSuccessful){
+            let bankDetails = response.data.responseBody
+            return bankDetails
+        }else{
+            return false
+        }
+        
+
+    } catch (error) {
+        console.log(error.response);
+        // if(error.response.status == 404){
+        //     return res.status(404).json({
+        //         message: error.response.data
+        //     })
+        // }
+        // if(error.response.status == 500){
+        //     return res.status(404).json({
+        //         message: "Unable to connect to payment Api"
+        //     })
+        // }
+        // return res.status(500).json({
+        //     message: "error connecting to api",
+        //     error: error.response.data
+        // })
+        return false;
+
+    }
+
+}
+
 // console.log("oaut2=",getAuthToken());
 
+//for deposit
 exports.initializePayment = async(req, res)=>{
     if(Object.keys(req.body).length === 0 ){
         res.status(400).json({
@@ -53,33 +101,46 @@ exports.initializePayment = async(req, res)=>{
         })
         return
     }
-    let {amount,name, email, description} = req.body
+    let {amount,name,userid, email, description} = req.body
+    //validate amount
+    amount = parseInt(amount)
+    if(!(amount > 0)){
+        return res.status(400).json({
+            message: "pass in a valid amount"
+        })
+    }
     if(!amount || !name ||!email){
         res.status(400).json({
             message: "All field must be passed"
         })
         return
     }
-    let redirect_url = process.env.PAYMENT_REDIRECT_URL || "http://localhost:2000/pay/verify";
-    const timeNow = Date.now()
-    let tnx_ref = "MON"+timeNow;
+    //create transaction record
+    let transRef = await transaction.createTransaction(userid, amount, 'Monnify', 'Payment', 'Pending', description)
+    if(!transRef){
+        res.status(500).json({
+            message: "Error with DB server, unable to create transaction"
+        })
+        return
+    }
+
+    let redirect_url = process.env.PAYMENT_REDIRECT_URL || "http://localhost:2000/verify_payment/monnify";
     let url = process.env.MONNIFY_BASE_URL + process.env.MONNIFY_PAYMENT_ENDPOINT;
 
-    //get oauth2 token
+    //get oauth2 token from cache or from monify itself
     const accessToken = await getAuthToken();
     const data = {
         "amount": amount,
         "customerName": name,
         "customerEmail": email,
-        "paymentReference": tnx_ref,
+        "paymentReference": transRef,
         "paymentDescription": description || "Research Gain Payment",
         "currencyCode": "NGN",
         "contractCode": process.env.MONNIFY_CONTRACT_CODE,
         "redirectUrl": redirect_url,
         "paymentMethods":["CARD","ACCOUNT_TRANSFER"]
     }
-
-      
+  
     const options = {
         method: "POST",
         headers: { 
@@ -90,24 +151,77 @@ exports.initializePayment = async(req, res)=>{
     }
     try {
         const response = await axios(options)
-        const { responseBody } = response.data;
-    
-        // return res.status(200).json(responseBody)
-
+        console.log(response.data);
         if(response.data.requestSuccessful){
+            //update transactions with api_ref
+            const api_ref = response.data.responseBody.transactionReference;
+            const updateTransaction = await transaction.updateTransaction({api_ref: api_ref}, "tnx_ref", transRef)
+            if(!updateTransaction){
+                res.status(500).json({
+                    message: "Error with DB server, unable to create transaction"
+                })
+                return
+            }
             return res.status(200).json({
-                paymentlink: response.data.checkoutUrl,
-                tnx_ref: response.data.paymentReference
+                paymentlink: response.data.responseBody.checkoutUrl,
+                tnx_ref: response.data.responseBody.paymentReference
             })
         }
         
     } catch (error) {
         console.log(error);
-        // return res.status(500).json(error)
+        return res.status(500).json(error)
     }
     
 }
 
+exports.verifyTRansaction = async(transactionReference)=>{
+    console.log("transactionReference= ", transactionReference);
+    if(!transactionReference){
+        return false;
+    }
+    let encodeRef = encodeURI(transactionReference)
+    let url = process.env.MONNIFY_BASE_URL + process.env.MONNIFY_VERIFY_TRANSACTIONS_ENDPOINT +`${encodeRef}`;
+    console.log(url);
+    const accessToken = await getAuthToken();
+
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${accessToken}`,
+            "Content-type": "application/json"
+        },
+        url,
+    }
+
+    try {
+        const response = await axios(options);
+        console.log(response.data);
+        if(response.data.requestSuccessful){
+            const { transactionReference, paymentReference, amountPaid, settlementAmount, paymentStatus, paymentMethod, payment_type, customer } = response.data.responseBody;
+            if(paymentMethod == "CARD"){
+                //wonna save card details for future sake
+            }
+            //update db status (paymentReference = tnx_ref) (api_ref = transactionReference:)
+            let updateTnxStatus = await transaction.updateTransaction({paymentStatus: paymentStatus},"api_ref", transactionReference)
+            return {
+                paymentStatus: paymentStatus ,
+                paymentMethod: paymentMethod, 
+                payment_type: payment_type,
+                settlementAmount: settlementAmount,
+                customer: customer
+            };
+
+        }
+        return false;
+
+    } catch (error) {
+        console.log(error);
+    }
+
+}
+
+//for withraw
 exports.initializeTransfer = async(req, res)=>{
     if(Object.keys(req.body).length === 0 ){
         res.status(400).json({
@@ -115,42 +229,47 @@ exports.initializeTransfer = async(req, res)=>{
         })
         return
     }
-    let {amount,destinationAccountNumber, destinationAccountName, destinationBankCode, narration} = req.body
+    let {userid, amount,accountNo, bankCode, narration} = req.body
     
-    if(!amount || !destinationAccountName ||!destinationAccountNumber || !destinationBankCode){
+    if(!amount || !userid ||!accountNo || !bankCode){
         res.status(400).json({
             message: "All field must be passed"
         })
         return
     }
-    let redirect_url = process.env.PAYMENT_REDIRECT_URL || "http://localhost:2000/pay/verify";
-    const timeNow = Date.now()
-    let tnx_ref = "MON"+timeNow;
+    //verify bank
+    let validBank = await validateBankAccount(accountNo, bankCode)
+    if(!validBank){
+        return res.status(400).json({
+            message: "Invalid account passed",
+        })
+    }
+    console.log("Valid bank proceed to create transaction");
+    let accountName = validBank.accountName;
+    console.log(validBank.accountName);
+    //create transaction record in DB
+    let transRef = await transaction.createTransaction(userid, amount, 'Monnify', 'Withraw', 'Pending', narration)
+    if(!transRef){
+        res.status(500).json({
+            message: "Error with DB server, unable to create transaction"
+        })
+        return
+    }
+    console.log("trans ref= ",transRef);
+
     let url = process.env.MONNIFY_BASE_URL + process.env.MONNIFY_TRANSFER_ENDPOINT;
     //get oauth2 token
     const accessToken = await getAuthToken();
     const data = {
         "amount": amount,
-        "destinationAccountName": destinationAccountName,
-        "destinationAccountNumber": destinationAccountNumber,
-        "destinationBankCode": destinationBankCode,
-        "reference": tnx_ref,
+        "destinationAccountName": accountName,
+        "destinationAccountNumber": accountNo,
+        "destinationBankCode": bankCode,
+        "reference": transRef,
         "narration": narration || "Transfer From Research Gain",
         "currency": "NGN",
         "sourceAccountNumber": process.env.MONNIFY_TRANSFER_ACCNO
     }
-
-    // {
-    //     "amount": 20,
-    //     "reference":"ben9-jlo00hdhdjjdfjoj--i",
-    //     "narration":"Test01",
-    //     "destinationBankCode": "057",
-    //     "destinationAccountNumber": "2085096393",
-    //     "currency": "NGN",
-    //     "sourceAccountNumber": "8016472829",
-    //     "destinationAccountName": "Marvelous Benji"
-    // }
-
       
     const options = {
         method: "POST",
@@ -163,22 +282,17 @@ exports.initializeTransfer = async(req, res)=>{
     try {
         const response = await axios(options)
         const { responseBody } = response.data;
+        //update db with the transaction status
+        let updateStatus = await transaction.updateTransaction({paymentStatus: responseBody.status},"tnx_ref", transRef)
     
         return res.status(200).json(responseBody)
-
-        // if(response.data.requestSuccessful){
-        //     return res.status(200).json({
-        //         paymentlink: response.data.checkoutUrl
-        //     })
-        // }
         
     } catch (error) {
         console.log(error);
-        // return res.status(500).json(error)
+        return res.status(500).json(error.data)
     }
     
 }
-
 
 exports.getBanks = async(req, res)=>{
     let url = process.env.MONNIFY_BASE_URL +"/api/v1/banks";
@@ -252,17 +366,30 @@ exports.verifyBankAccount = async(req, res)=>{
         
 
     } catch (error) {
-        console.log(error);
+        console.log(error.response.data);
+        if(error.response.status == 404){
+            return res.status(404).json({
+                message: error.response.data
+            })
+        }
+        if(error.response.status == 500){
+            return res.status(404).json({
+                message: "Unable to connect to payment Api"
+            })
+        }
         return res.status(500).json({
-            message: "error connecting to api"
+            message: "error connecting to api",
+            error: error.response.data
         })
+
     }
 
 }
 
-
-
 exports.handleWebhook = async(req, res)=>{
+    //so as to avoid repeatedly sending this particular notification
+    // res.status(200);
+
     const webhookData = req.body
     //get payment reference
     //fetch db by paymentReference

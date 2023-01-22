@@ -1,5 +1,5 @@
 const { Model } = require("objection");
-// const {generateUniqueTnxRef} = require("../helpers/commonFunctions");
+const util = require("../utilities");
 
 
 class Transaction extends Model {
@@ -10,7 +10,7 @@ class Transaction extends Model {
   $beforeInsert() {
     this.date_created = new Date().toISOString().slice(0, 10);
     this.date_updated = new Date().toISOString().slice(0, 10);
-    this.tnx_ref = generateUniqueTnxRef();
+    // this.tnx_ref = util.generateRandomString
   }
   $beforeUpdate() {
     this.date_updated = new Date().toISOString().slice(0, 10);
@@ -28,10 +28,12 @@ class Transaction extends Model {
         paymentMethod: {type: "string"},
         paymentProvider:{type: "string"},
         amount: {type: "number"},
-        status: { type: "integer" },
-        paymentStatus: {type: "status"},
+        status: { type: "string" },
+        paymentStatus: {type: "string"},
         tnx_ref: {type: "string"},
-        user_id: {type: "integer"}
+        user_id: {type: "integer"},
+        description: {type: "string"},
+        api_ref: {type: "string"},
       },
     };
   }
