@@ -34,6 +34,39 @@ const getBills = async(billType)=>{
     }
 }
 
+//reeturns networkname
+const validatePhonenumber =async(phoneno)=>{
+    if(!phoneno){
+        return false
+    }
+
+    let url = `https://api.flutterwave.com/v3/bill-items/AT099/validate?code=BIL099&&customer=${phoneno}`
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
+        },
+        url,
+        // data
+    }
+
+    try {
+        const response = await axios(options);
+        console.log(response.data);
+        if (response.data.status == "success"){
+            //return payment link and redirect user there
+            console.log("data", response.data.data);
+           let  networkName = response.data.data.name
+            return networkName
+        }
+
+    } catch (error) {
+        console.log(error);
+        return false
+    }
+
+}
+
 exports.makePayment= async(req, res)=>{
     if(Object.keys(req.body).length === 0 ){
         res.status(400).json({
