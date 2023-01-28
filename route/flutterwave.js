@@ -9,6 +9,7 @@ router.post("/withdraw", flutterwave.transferFund)
 router.get("/verify", flutterwave.verifyPayment)
 router.get("/airtime", flutterwave.getAirtimeBills)
 router.get("/data", flutterwave.getDataBills)
+router.get("/bills/validate", flutterwave.validatePhonenumber)
 
 //add new user
 // router.post("/", users.create)

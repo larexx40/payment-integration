@@ -1,4 +1,5 @@
-const axios = require("axios")
+const axios = require("axios");
+const { response } = require("express");
 
 require("dotenv").config();
 
@@ -77,7 +78,6 @@ exports.makePayment= async(req, res)=>{
         method: "POST",
         headers: { 
             Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
-            // Authorization: "Bearer FLWPUBK_TEST-SANDBOXDEMOKEY-X",
         },
         url,
         data
@@ -89,16 +89,20 @@ exports.makePayment= async(req, res)=>{
         if (response.data.status == "success"){
             //return payment link and redirect user there
             console.log("payment link", response.data.data.link);
-            return res.status(200).json({paymentlink: response.data.data.link})
+            return res.status(200).json({
+                status: true,
+                paymentlink: response.data.data.link
+            })
         }
         //else return issue with flutterwave response
 
     } catch (error) {
         console.log(error);
-        return res.json({
-            message :error.message,
-            code :error.code,
-            status :error.status
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
         })
     }
 
@@ -140,7 +144,10 @@ exports.verifyPayment = async(req, res)=>{
             //update db set status to success
             //get and verify if tx_ref exist in db(select * from transactios where tnx_ref = tx_ref && savedAmount == amount_settled )
             //if exist confirm the amount
-            return res.status(200).json({message: "Payment Successful"})
+            return res.status(200).json({
+                status: true,
+                message: "Payment Successful"
+            })
         }else{
             return res.status(500).json({message: "Error with flutterwave"})
         }
@@ -148,10 +155,11 @@ exports.verifyPayment = async(req, res)=>{
 
     } catch (error) {
         console.log(error);
-        return res.json({
-            message :error.message,
-            code :error.code,
-            status :error.status
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
         })
     }
 
@@ -174,6 +182,7 @@ exports.getFlutterBanks = async(req, res)=>{
         if (response.data.status == "success"){
             let banks = response.data.data
             return res.status(200).json({
+                status: true,
                 banks: banks,
                 message: "bank retrieved"
             })
@@ -188,10 +197,11 @@ exports.getFlutterBanks = async(req, res)=>{
 
     } catch (error) {
         console.log(error);
-        return res.json({
-            message :error.message,
-            code :error.code,
-            status :error.status
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
         })
     }
 
@@ -228,29 +238,26 @@ exports.verifyBankAccount = async(req, res)=>{
         if (response.data.status == "success"){
             //check if user fullname == account name
             return res.status(200).json({
+                status: true,
                 accountNumber : account_number,
                 accountName: response.data.data.account_name,
                 message: "bank retrieved"
             })
-        }else{
-            return res.status(200).json({
-                message: response.data.data.message
-            });
         }
-
-        // {
-        //     "id": 177,
-        //     "code": "058",
-        //     "name": "GTBank Plc"
-        // },
+        // else{
+        //     return res.status(200).json({
+        //         message: response.data.data.message
+        //     });
+        // }
         
 
     } catch (error) {
         console.log(error);
-        return res.json({
-            message :error.message,
-            code :error.code,
-            status :error.status
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
         })
     }
 
@@ -315,23 +322,19 @@ exports.transferFund = async(req, res)=>{
             })
         }else{
             return res.status(200).json({
+                status: true,
                 message: response.data.data.message
             });
         }
 
-        // {
-        //     "id": 177,
-        //     "code": "058",
-        //     "name": "GTBank Plc"
-        // },
         
-
     } catch (error) {
         console.log(error);
-        return res.json({
-            message :error.message,
-            code :error.code,
-            status :error.status
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
         })
     }
 
@@ -352,25 +355,39 @@ exports.getAirtimeBills = async(req, res)=>{
         const response = await axios(options);
         if (response.data.status == "success"){
             let bills = response.data.data
-            return res.status(200).json({
-                bills: bills,
+            let plans = [];
+            if(bills){
+                bills.forEach(element => {
+                    // console.log(element.biller_name);
+                    plans.push({
+                        name: element.name,
+                        billerCode: element.biller_code,
+                        billerName: element.biller_name,
+                        itemCode: element.item_code,
+                        amount: element.amount,
+                    });
+                });
+            }        
+            return res.status(200).json({status: true,
+                bills: plans,
                 message: "bill retrieved"
             })
         }
 
     } catch (error) {
         console.log(error);
-        return res.json({
-            message :error.message,
-            code :error.code,
-            status :error.status
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
         })
     }
 
 }
 
 exports.getDataBills = async(req, res)=>{
-    let network = req.query.network.toUpperCase()
+    let network = (req.query.network)?req.query.network.toUpperCase():'';
     console.log(network);
     if(network !== "MTN" && network !=="GLO" && network !== "AIRTEL" && network !== "9MOBILE" && network !== "ETISALAT"){
         res.status(400).json({
@@ -420,6 +437,7 @@ exports.getDataBills = async(req, res)=>{
                     plans.push({
                         billerCode: element.biller_code,
                         billerName: element.biller_name,
+                        itemCode: element.item_code,
                         amount: element.amount,
                     });
                 });
@@ -427,6 +445,7 @@ exports.getDataBills = async(req, res)=>{
 
             // console.log(plans);
             return res.status(200).json({
+                status: true,
                 bills: (bills)? plans: "no dataplan found",
                 message: "bills retrieved"
             })
@@ -434,10 +453,60 @@ exports.getDataBills = async(req, res)=>{
 
     } catch (error) {
         console.log(error);
-        return res.json({
-            message :error.message,
-            code :error.code,
-            status :error.status
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
+        })
+    }
+
+}
+
+exports.validatePhonenumber =async(req, res)=>{
+    if(!req.query){
+        return res.status(400).json({
+            message: "pass in parameter"
+        })
+    }
+    if(!req.query.phoneno){
+        return res.status(400).json({
+            message: "Pass in phone number"
+        })
+    }
+
+    let phoneno = req.query.phoneno;
+
+    let url = `https://api.flutterwave.com/v3/bill-items/AT099/validate?code=BIL099&&customer=${phoneno}`
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
+        },
+        url,
+        // data
+    }
+
+    try {
+        const response = await axios(options);
+        console.log(response.data);
+        if (response.data.status == "success"){
+            //return payment link and redirect user there
+            console.log("data", response.data.data);
+            //networkName = response.data.data.name
+            return res.status(200).json({
+                status: true,
+                data: response.data.data
+            })
+        }
+
+    } catch (error) {
+        console.log(error);
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+            statusCode :error.response.status
         })
     }
 
