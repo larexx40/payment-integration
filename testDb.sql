@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   `paymentProvider` varchar(255),
   `amount` varchar(2555),
   `paymentStatus` varchar(255),
+  `paymentType` varchar(255),description
+  `description` varchar(255),
   `tnx_ref` varchar(2555) NOT NULL,
   `user_id` int(11),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ,

@@ -2,6 +2,37 @@ const axios = require("axios")
 
 require("dotenv").config();
 
+const getBills = async(billType)=>{
+    if(!billType){
+        return false;
+    }
+    if (billType !== 'airtime' && billType !== "data"){
+        return false
+    }
+    let params = billType+"=1";
+    //https://api.flutterwave.com/v3/bill-categories?airtime=1
+    let url = `https://api.flutterwave.com/v3/bill-categories?${params}`;
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
+        },
+        url,
+    }
+    try {
+        const response = await axios(options);
+        if (response.data.status == "success"){
+            let bills = response.data.data
+            return bills;
+        }
+
+
+    } catch (error) {
+        console.log(error);
+        return false
+    }
+}
+
 exports.makePayment= async(req, res)=>{
     if(Object.keys(req.body).length === 0 ){
         res.status(400).json({
@@ -305,6 +336,116 @@ exports.transferFund = async(req, res)=>{
     }
 
 }
+
+exports.getAirtimeBills = async(req, res)=>{
+    let allowedCountry = ['NG', 'GH', 'KE', 'UG', 'ZA','TZ']
+    let country = (req.query.country && allowedCountry.includes(req.query.country.toUpperCase()) )? req.query.county.toUpperCase() : allowedCountry[0]
+    let url = `https://api.flutterwave.com/v3/bill-categories?airtime=1&country=${country}`;
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
+        },
+        url,
+    }
+    try {
+        const response = await axios(options);
+        if (response.data.status == "success"){
+            let bills = response.data.data
+            return res.status(200).json({
+                bills: bills,
+                message: "bill retrieved"
+            })
+        }
+
+    } catch (error) {
+        console.log(error);
+        return res.json({
+            message :error.message,
+            code :error.code,
+            status :error.status
+        })
+    }
+
+}
+
+exports.getDataBills = async(req, res)=>{
+    let network = req.query.network.toUpperCase()
+    console.log(network);
+    if(network !== "MTN" && network !=="GLO" && network !== "AIRTEL" && network !== "9MOBILE" && network !== "ETISALAT"){
+        res.status(400).json({
+            message: "Invalid network passed"
+        })
+        return
+    }
+    let billerCode = {
+        MTN: "BIL104",
+        GLO: "BIL105",
+        AIRTEL: "BIL106",
+        ETISALAT: "BIL107"
+    }
+    let allowedCountry = ['NG', 'GH', 'KE', 'UG', 'ZA','TZ']
+    let country = (req.query.country && allowedCountry.includes(req.query.country.toUpperCase()) )? req.query.country.toUpperCase() : allowedCountry[0]
+    let networkCode = ''
+    if(network == "MTN"){
+        networkCode = "&biller_code="+billerCode.MTN;
+    }
+    if(network == "GLO"){
+        networkCode = `&biller_code=${billerCode.GLO}`;
+    }
+    if(network == "AIRTEL"){
+        networkCode = `&biller_code=${billerCode.AIRTEL}`;
+    }
+    if(network == "9MOBILE" || network == "ETISALAT"){
+        networkCode = `&biller_code=${billerCode.ETISALAT}`;
+    }
+    let url = `https://api.flutterwave.com/v3/bill-categories?data_bundle=1&country=${country}${networkCode}`;
+    console.log(url);
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
+        },
+        url,
+    }
+    try {
+        const response = await axios(options);
+        if (response.data.status == "success"){
+            let bills = response.data.data
+            let details = {};
+            let plans = []
+            if(bills){
+                bills.forEach(element => {
+                    // console.log(element.biller_name);
+                    plans.push({
+                        billerCode: element.biller_code,
+                        billerName: element.biller_name,
+                        amount: element.amount,
+                    });
+                });
+            }           
+
+            // console.log(plans);
+            return res.status(200).json({
+                bills: (bills)? plans: "no dataplan found",
+                message: "bills retrieved"
+            })
+        }
+
+    } catch (error) {
+        console.log(error);
+        return res.json({
+            message :error.message,
+            code :error.code,
+            status :error.status
+        })
+    }
+
+}
+
+
+
+
 
 //call verify endpoint maybe every 30mins to verify payment and update status to paid
 
