@@ -24,7 +24,7 @@ router.get("/monnify", async(req, res)=>{
         })
     }
     const api_ref = transactionDetails.api_ref;
-    const verify = await monnify.verifyTRansaction(api_ref)
+    // const verify = await monnify.verifyTRansaction(api_ref)
     console.log(verify);
     if(verify){
         //update payment status

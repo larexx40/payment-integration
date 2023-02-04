@@ -15,18 +15,24 @@ INSERT INTO users (email, firstName, lastName, age) VALUES("larexx40@gmail.com",
 
 CREATE TABLE IF NOT EXISTS `transactions` (
   `tnx_id` int(11) AUTO_INCREMENT,
-  `paymentMethod` varchar(255) NOT NULL,
-  `paymentProvider` varchar(255),
+  `paymentMethod` varchar(255) comment "card, transfer",
+  `paymentProvider` varchar(255) comment "monnify, flutterwave",
   `amount` varchar(2555),
   `paymentStatus` varchar(255),
-  `paymentType` varchar(255),description
+  `transactionType` varchar(255) comment "Payment, withraw, data airtime",
+  `paymentType` varchar(255), replaced by transactionType
   `description` varchar(255),
+  `accountno` varchar(255),
+  `accountName` varchar(255),
   `tnx_ref` varchar(2555) NOT NULL,
   `user_id` int(11),
+  status varchar(22) comment "Pending, Successful, Failed",
+  phoneno varchar(22),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`tnx_id`)
 );
+
 
 
 CREATE TABLE IF NOT EXISTS `bankallowed` (

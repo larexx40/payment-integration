@@ -1,5 +1,6 @@
 const axios = require("axios");
-const { response } = require("express");
+const transaction = require("../controller/transactions")
+const util = require("../utilities");
 
 require("dotenv").config();
 
@@ -34,7 +35,7 @@ const getBills = async(billType)=>{
     }
 }
 
-//reeturns networkname
+//returns networkname
 const validatePhonenumber =async(phoneno)=>{
     if(!phoneno){
         return false
@@ -67,32 +68,61 @@ const validatePhonenumber =async(phoneno)=>{
 
 }
 
+//pay for survey or analysis
 exports.makePayment= async(req, res)=>{
+    let allowedCurrency =  ["NGN",'KES', "MWK", "MAD", "GHS",'UGX', 'TZS', 'USD', "ZAR"]
+    // let allowedCountry = ['NG', 'GH', 'KE', 'UG', 'ZA','TZ']
     if(Object.keys(req.body).length === 0 ){
         res.status(400).json({
             message: "content cannot be empty"
         })
         return
     }
+    let {amount,name,userid, email, phoneno, description, currency} = req.body
+    //validate amount
+    amount = parseInt(amount)
+    if(!(amount > 0)){
+        return res.status(400).json({
+            message: "pass in a valid amount"
+        })
+    }
+    if(!amount || !name ||!email){
+        res.status(400).json({
+            message: "All field must be passed"
+        })
+        return
+    }
+    
     //generate unique tnx_ref
     //fetch customer details from db
     //create transaction record with status pending
-    let {amount, email, phoneno, name} = req.body
-    let country =  ['KES', "MWK", "MAD", "GHS","NGN","ZAR"]
-    currency = currency.toUpperCase()
-    if(currency && !country.includes(currency)){
-        return res.status(400).json({
-            message: "Pass in valid currency"
+    currency = (currency && allowedCurrency.includes(currency.toUpperCase()) )? currency.toUpperCase() : allowedCurrency[0]
+    
+    let ref = util.generateUniqueTnxRef();
+    let transRef = await transaction.createTransaction({
+        user_id: userid,
+        amount: amount,
+        tnx_ref: ref,
+        transactionType: "Payment",
+        paymentMethod: '',
+        paymentProvider: "Flutterwave",
+        status: 'Pending',
+        paymentStatus: '',
+        description: description,
+    })
+    
+    if(!transRef){
+        res.status(500).json({
+            message: "Error with DB server, unable to create transaction"
         })
+        return
     }
-    currency = (currency)? currency: "NGN";
-    let redirect_url = process.env.PAYMENT_REDIRECT_URL || "http://localhost:5000/pay/verify";
-    const timeNow = Date.now()
-    let tnx_ref = "FLW"+timeNow;
+    console.log("trans ref= ",transRef);
+    let redirect_url = process.env.PAYMENT_REDIRECT_URL || "http://localhost:2000/pay/verify";
     //get customer details from authourization
     const url = process.env.FW_PAYMENT_URL || "https://api.flutterwave.com/v3/payments"
     let data = {
-        tx_ref: tnx_ref,
+        tx_ref: ref,
         amount: amount,
         currency: currency,
         redirect_url: redirect_url,
@@ -135,7 +165,7 @@ exports.makePayment= async(req, res)=>{
             status: false,
             data :error.response.data,
             message: error.response.statusText,
-             statusCode :error.response.status
+            statusCode :error.response.status
         })
     }
 
@@ -143,19 +173,38 @@ exports.makePayment= async(req, res)=>{
 
 exports.verifyPayment = async(req, res)=>{
     // const {status, transaction_id, tx_ref} = req.query
-    const transaction_id = req.query.transaction_id;
-    const status = req.query.status;
+    const {transaction_id, status, tx_ref}= req.query
+
 
     console.log("transaction_id= ", transaction_id);
-    const tx_ref =req.query.tx_ref
     //fetch tx_ref from transactions database
     //get useremail, amount, for verification
-    if(!transaction_id){
+    // status=successful&tx_ref=IVLJM1675478918042&transaction_id=4132861
+    if(!transaction_id && status !== 'successful'){
         //payment canceled
         return res.status(200).json({
-            message: "Payment Cancealed or pass in valid transaction id"
+            status: false,  
+            message: "Payment Cancealed, proceed to make payment"
         })
     }
+    if(status === 'failed'){
+        //payment canceled
+        return res.status(200).json({
+            status: false,  
+            message: "Payment failed, try again"
+        })
+    }
+
+    //get api_ref from transaction reference
+    let transactionDetails = await transaction.getOneTransaction({tnx_ref: tx_ref})
+    if(!transactionDetails){
+        return res.status(404).json({ 
+            status: false,      
+            message: "transaction with refrence not found"
+        })
+    }
+
+    
     let url = `https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`
     const options = {
         method: "GET",
@@ -172,11 +221,26 @@ exports.verifyPayment = async(req, res)=>{
             // you might want to save card details
             let userCardDetails = response.data.data.card;
         }
-        if (response.data.status == "success"){
+
+        if (status == "success" && amount === transactionDetails.amount){
             //get payment details
             //update db set status to success
             //get and verify if tx_ref exist in db(select * from transactios where tnx_ref = tx_ref && savedAmount == amount_settled )
             //if exist confirm the amount
+            let updateObject = {
+                paymentStatus: status,
+                paymentMethod: payment_type,
+
+            }
+
+            if(status == "PAID" || status == "OVERPAID"){
+                updateObject.status = "Success"
+            }else if(status == "PARTIALLY_PAID" || status == "PENDING"){
+                updateObject.status = "Pending"
+            }else{
+                updateObject.status = "Failed"
+            }
+
             return res.status(200).json({
                 status: true,
                 message: "Payment Successful"
@@ -192,7 +256,7 @@ exports.verifyPayment = async(req, res)=>{
             status: false,
             data :error.response.data,
             message: error.response.statusText,
-             statusCode :error.response.status
+            statusCode :error.response.status
         })
     }
 
@@ -234,7 +298,7 @@ exports.getFlutterBanks = async(req, res)=>{
             status: false,
             data :error.response.data,
             message: error.response.statusText,
-             statusCode :error.response.status
+            statusCode :error.response.status
         })
     }
 
@@ -470,6 +534,7 @@ exports.getDataBills = async(req, res)=>{
                     plans.push({
                         billerCode: element.biller_code,
                         billerName: element.biller_name,
+                        name: element.name,
                         itemCode: element.item_code,
                         amount: element.amount,
                     });
@@ -543,6 +608,139 @@ exports.validatePhonenumber =async(req, res)=>{
         })
     }
 
+}
+
+exports.buyData = async(req, res)=>{
+    if(Object.keys(req.body).length === 0 ){
+        res.status(400).json({
+            message: "content cannot be empty"
+        })
+        return
+    }
+    let {phoneno, amount,type, country} = req.body
+    let allowedCountry = ['NG', 'GH', 'KE', 'UG', 'ZA','TZ']
+    country = (country && allowedCountry.includes(country.toUpperCase()) )? country.toUpperCase() : allowedCountry[0]
+    if(!amount || !phoneno){
+        res.status(400).json({
+            message: "All field must be passed"
+        })
+        return
+    }
+    //validate phone number
+    let validPhoneno = await validatePhonenumber(phoneno)
+    if(!validPhoneno){
+        return res.status(400).json({
+            status: false,
+            message: "Invalid Phone no."
+        })
+    }
+    let url = `https://api.flutterwave.com/v3/bills`;
+    let ref = util.generateUniqueTnxRef();
+    //billername and type=>getbillsdate bllerName & name
+    const data = {
+        "amount": amount,
+        // "biller_name": "MTN 50 MB",
+        "country": country,
+        "customer": phoneno,
+        "package_data": "DATA",
+        "recurrence": "ONCE",
+        "reference": ref,
+        "type": type
+    };
+    console.log(data);
+    const options = {
+        method: "POST",
+        headers: { 
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
+        },
+        url,
+        data: data
+    }
+    try {
+        const response = await axios(options);
+        if (response.data.status == "success"){
+            //use transaction id to verify from paystack
+            console.log(response.data);
+            return res.status(200).json({
+                status: true,
+                data: response.data.data
+            })
+        }
+    } catch (error) {
+        console.log(error);
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
+        })
+    }
+}
+
+exports.buyAirtime = async(req, res)=>{
+    if(Object.keys(req.body).length === 0 ){
+        res.status(400).json({
+            message: "content cannot be empty"
+        })
+        return
+    }
+    let {phoneno, amount,type, country} = req.body
+    let allowedCountry = ['NG', 'GH', 'KE', 'UG', 'ZA','TZ']
+    country = (country && allowedCountry.includes(country.toUpperCase()) )? country.toUpperCase() : allowedCountry[0]
+    if(!amount || !phoneno){
+        res.status(400).json({
+            message: "All field must be passed"
+        })
+        return
+    }
+    let validPhoneno = await validatePhonenumber(phoneno)
+    if(!validPhoneno){
+        return res.status(400).json({
+            status: false,
+            message: "Invalid Phone no."
+        })
+    }
+    let url = `https://api.flutterwave.com/v3/bills`;
+    let ref = util.generateUniqueTnxRef();
+    //billername and type=>getbillsdate bllerName & name
+    const data = {
+        "amount": amount,
+        // "biller_name": "MTN 50 MB",
+        "country": country,
+        "customer": phoneno,
+        "package_data": "DATA",
+        "recurrence": "ONCE",
+        "reference": ref,
+        "type": type
+    };
+    console.log(data);
+    const options = {
+        method: "POST",
+        headers: { 
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_V3_SECRET_KEY_TEST}`
+        },
+        url,
+        data: data
+    }
+    try {
+        const response = await axios(options);
+        if (response.data.status == "success"){
+            //use transaction id to verify from paystack
+            console.log(response.data);
+            return res.status(200).json({
+                status: true,
+                data: response.data.data
+            })
+        }
+    } catch (error) {
+        console.log(error);
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
+        })
+    }
 }
 
 

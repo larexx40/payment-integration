@@ -1,36 +1,12 @@
 const Transaction = require('../model/transactions')
 const util = require("../utilities");
 
-exports.createTransaction = async (user_id, amount, paymentProvider, paymentType, status, description) => {  
-    if(!user_id || !amount || !paymentProvider || !paymentType){
-        return false
+exports.createTransaction = async (insertObject) => {  
+    let addTransaction = await Transaction.query().insert(insertObject)
+    if(!addTransaction){
+        return false;
     }
-    let ref = util.generateUniqueTnxRef();
-    
-    try {
-        let addTransaction = await Transaction.query().insert({
-            user_id: user_id,
-            amount: amount,
-            tnx_ref: ref,
-            paymentType: paymentType,
-            paymentMethod: '',
-            paymentProvider: paymentProvider,
-            status: status,
-            paymentStatus: '',
-            description: description,
-        })
-
-        if(addTransaction){
-            return addTransaction.tnx_ref
-        }else{
-            console.log("Unable to creat transaction!")
-        }
-        
-    } catch (err) {
-        console.log(err);
-    }
-    
-
+    return addTransaction.tnx_ref;
 };
 
 exports.getAllTransaction = async (req, res)=>{

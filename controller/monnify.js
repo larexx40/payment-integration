@@ -1,5 +1,6 @@
 const axios = require("axios")
 const transaction = require("../controller/transactions")
+const util = require("../utilities");
 
 require("dotenv").config();
 
@@ -116,7 +117,18 @@ exports.initializePayment = async(req, res)=>{
         return
     }
     //create transaction record
-    let transRef = await transaction.createTransaction(userid, amount, 'Monnify', 'Payment', 'Pending', description)
+    let ref = util.generateUniqueTnxRef();
+    let transRef = await transaction.createTransaction({
+        user_id: userid,
+        amount: amount,
+        tnx_ref: ref,
+        transactionType: "Payment",
+        paymentMethod: '',
+        paymentProvider: "Monnify",
+        status: 'Pending',
+        paymentStatus: '',
+        description: description,
+    })
     if(!transRef){
         res.status(500).json({
             message: "Error with DB server, unable to create transaction"
@@ -134,7 +146,7 @@ exports.initializePayment = async(req, res)=>{
         "customerName": name,
         "customerEmail": email,
         "paymentReference": transRef,
-        "paymentDescription": description || "Research Gain Payment",
+        "paymentDescription": (description)? description : "Research Gain Payment",
         "currencyCode": "NGN",
         "contractCode": process.env.MONNIFY_CONTRACT_CODE,
         "redirectUrl": redirect_url,
@@ -170,17 +182,42 @@ exports.initializePayment = async(req, res)=>{
         
     } catch (error) {
         console.log(error);
-        return res.status(500).json(error)
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+            statusCode :error.response.status
+        })
     }
     
 }
-
-exports.verifyTRansaction = async(transactionReference)=>{
-    console.log("transactionReference= ", transactionReference);
-    if(!transactionReference){
-        return false;
+//verify the payment
+exports.verifyTRansaction = async(req, res)=>{
+    if(Object.keys(req.query).length === 0 ){
+        res.status(400).json({
+            message: "Transaction ref must be passed"
+        })
+        return
     }
-    let encodeRef = encodeURI(transactionReference)
+    const {transactionReference} = req.query;
+    if(!transactionReference){
+        return res.status(200).json({
+            message: "Transaction ref must be passed"
+        })
+    }
+    console.log("transactionReference= ", transactionReference);
+    //get api_ref from transaction reference
+    let transactionDetails = await transaction.getOneTransaction({tnx_ref: transactionReference})
+    if(!transactionDetails){
+        return res.status(404).json({       
+            message: "transaction with refrence not found, redirect to checkout url"
+        })
+    }
+    const api_ref = transactionDetails.api_ref;
+    let encodeRef = encodeURI(api_ref)
+    console.log("api_ref = ", api_ref);
+    console.log("encodeRef = ", encodeRef);
+
     let url = process.env.MONNIFY_BASE_URL + process.env.MONNIFY_VERIFY_TRANSACTIONS_ENDPOINT +`${encodeRef}`;
     console.log(url);
     const accessToken = await getAuthToken();
@@ -196,27 +233,47 @@ exports.verifyTRansaction = async(transactionReference)=>{
 
     try {
         const response = await axios(options);
-        console.log(response.data);
+        console.log(response.data.responseBody);
         if(response.data.requestSuccessful){
             const { transactionReference, paymentReference, amountPaid, settlementAmount, paymentStatus, paymentMethod, payment_type, customer } = response.data.responseBody;
+            //status = PAID, OVERPAID, PARTIALLY_PAID, PENDING, ABANDONED, CANCELLED, FAILED, REVERSED, EXPIRED
             if(paymentMethod == "CARD"){
                 //wonna save card details for future sake
             }
             //update db status (paymentReference = tnx_ref) (api_ref = transactionReference:)
-            let updateTnxStatus = await transaction.updateTransaction({paymentStatus: paymentStatus},"api_ref", transactionReference)
-            return {
+            let updateObject = {
+                paymentStatus: paymentStatus,
+                paymentMethod: paymentMethod,
+
+            }
+            
+            if(paymentStatus == "PAID" || paymentStatus == "OVERPAID"){
+                updateObject.status = "Success"
+            }else if(paymentStatus == "PARTIALLY_PAID" || paymentStatus == "PENDING"){
+                updateObject.status = "Pending"
+            }else{
+                updateObject.status = "Failed"
+            }
+            let updateTnxStatus = await transaction.updateTransaction(updateObject,"api_ref", transactionReference)
+            return res.status(200).json({
                 paymentStatus: paymentStatus ,
                 paymentMethod: paymentMethod, 
                 payment_type: payment_type,
                 settlementAmount: settlementAmount,
                 customer: customer
-            };
+            });
 
         }
         return false;
 
     } catch (error) {
         console.log(error);
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+            statusCode :error.response.status
+        })
     }
 
 }
@@ -244,11 +301,23 @@ exports.initializeTransfer = async(req, res)=>{
             message: "Invalid account passed",
         })
     }
-    console.log("Valid bank proceed to create transaction");
+    console.log("Valid bank proceed to create transaction", validBank);
     let accountName = validBank.accountName;
-    console.log(validBank.accountName);
     //create transaction record in DB
-    let transRef = await transaction.createTransaction(userid, amount, 'Monnify', 'Withraw', 'Pending', narration)
+    let ref = util.generateUniqueTnxRef();
+    let transRef = await transaction.createTransaction({
+        user_id: userid,
+        accountNo: accountNo,
+        accountName: accountName,
+        amount: amount,
+        tnx_ref: ref,
+        transactionType: "Withdraw",
+        paymentMethod: '',
+        paymentProvider: "Monnify",
+        status: 'Pending',
+        paymentStatus: '',
+        description: narration,
+    })
     if(!transRef){
         res.status(500).json({
             message: "Error with DB server, unable to create transaction"
@@ -282,6 +351,7 @@ exports.initializeTransfer = async(req, res)=>{
     try {
         const response = await axios(options)
         const { responseBody } = response.data;
+        console.log(responseBody);
         //update db with the transaction status
         let updateStatus = await transaction.updateTransaction({paymentStatus: responseBody.status},"tnx_ref", transRef)
     
@@ -289,9 +359,91 @@ exports.initializeTransfer = async(req, res)=>{
         
     } catch (error) {
         console.log(error);
-        return res.status(500).json(error.data)
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+            statusCode :error.response.status
+        })
     }
     
+}
+
+exports.verifyTransfer = async(req, res)=>{
+    if(Object.keys(req.query).length === 0 ){
+        res.status(400).json({
+            message: "Transaction ref must be passed"
+        })
+        return
+    }
+    const {transactionReference} = req.query;
+    if(!transactionReference){
+        return res.status(200).json({
+            message: "Transaction ref must be passed"
+        })
+    }
+
+    let url = process.env.MONNIFY_BASE_URL + process.env.MONNIFY_TRANSFER_ENDPOINT + `/summary?reference=${transactionReference}`;
+    
+    const accessToken = await getAuthToken();
+
+    const options = {
+        method: "GET",
+        headers: { 
+            Authorization: `Bearer ${accessToken}`,
+            "Content-type": "application/json"
+        },
+        url,
+    }
+
+    try {
+        const response = await axios(options);
+        console.log(response.data.responseBody);
+        if(response.data.requestSuccessful){
+            const { apiTransactionReference, paymentReference, amountPaid, settlementAmount, status, paymentMethod, payment_type, customer } = response.data.responseBody;
+            //status = SUCCESS, FAILED, PENDING, OTP_EMAIL_DISPATCH_FAILED, PENDING_AUTHORIZATION
+            if(paymentMethod == "CARD"){
+                //wonna save card details for future sake
+            }
+            //update db status (paymentReference = tnx_ref) (api_ref = transactionReference:)
+            let updateObject = {
+                paymentStatus: status,
+                paymentMethod: paymentMethod,
+
+            }
+            if(status == "SUCCESS"){
+                updateObject.status = "Success"
+            }else if(status == "PENDING" || status == "PENDING_AUTHORIZATION"){
+                updateObject.status = "Pending"
+            }else{
+                updateObject.status = "Failed"
+            }
+            console.log(transactionReference);
+            let updateTnxStatus = await transaction.updateTransaction(updateObject,"tnx_ref", transactionReference)
+            console.log("updated", updateTnxStatus);
+            return res.status(200).json({
+                status: true,
+                reqBody: response.data.responseBody,
+                // paymentStatus: paymentStatus ,
+                // paymentMethod: paymentMethod, 
+                // payment_type: payment_type,
+                // settlementAmount: settlementAmount,
+                // customer: customer
+            });
+
+        }
+        return false;
+
+    } catch (error) {
+        console.log(error);
+        return res.status(error.response.status).json({
+            status: false,
+            data :error.response.data,
+            message: error.response.statusText,
+             statusCode :error.response.status
+        })
+    }
+
 }
 
 exports.getBanks = async(req, res)=>{

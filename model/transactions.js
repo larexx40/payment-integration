@@ -24,9 +24,12 @@ class Transaction extends Model {
     return {
       type: "object",
       properties: {
-        paymentType: {type: "string"},
         paymentMethod: {type: "string"},
+        transactionType: {type: "string"},
+        phoneno: {type: "string"},
         paymentProvider:{type: "string"},
+        accountno:{type: "string"},
+        accountName:{type: "string"},
         amount: {type: "number"},
         status: { type: "string" },
         paymentStatus: {type: "string"},
