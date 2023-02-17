@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS `customers` (
   -- CONSTRAINT email_unique UNIQUE (`email`)
 );
 
-
 INSERT INTO users (email, firstName, lastName, age) VALUES("larexx40@gmail.com", "olanrewaju", "olatunji", 44)
 
 CREATE TABLE IF NOT EXISTS `transactions` (
@@ -32,7 +31,6 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`tnx_id`)
 );
-
 
 
 CREATE TABLE IF NOT EXISTS `bankallowed` (

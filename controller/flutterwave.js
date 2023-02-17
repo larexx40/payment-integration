@@ -760,12 +760,6 @@ exports.buyAirtime = async(req, res)=>{
 
 //call verify endpoint maybe every 30mins to verify payment and update status to paid
 
-
-
-
-
-
-
 // const makePayment= async()=>{
 //     //generate unique tnx_ref
 //     //fetch customer details from db
