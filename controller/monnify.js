@@ -1,6 +1,7 @@
 const axios = require("axios")
 const transaction = require("../controller/transactions")
 const util = require("../utilities");
+const {getCache, setCache} = require("./nodecache")
 
 require("dotenv").config();
 
@@ -9,6 +10,11 @@ require("dotenv").config();
 const getAuthToken = async()=>{
     //get feom somewhere if not expired, maybe from cache
     //it expire after 40mins
+    const accessToken = await getCache("monnifyAccessToken")
+    if(accessToken){
+        return accessToken;
+    }
+
     const apiKey = process.env.MONNIFY_APIKEY;
     const secretKey = process.env.MONNIFY_SECRET_KEY;
     const baseUrl = process.env.MONNIFY_BASE_URL ||  "https://sandbox.monnify.com";
@@ -33,6 +39,7 @@ const getAuthToken = async()=>{
             const { accessToken, expiresIn } = response.data.responseBody;
             // console.log(accessToken);
             //save somewhere maybe cache
+            await setCache('monnifyAccessToken', accessToken, expiresIn)
             return accessToken
         }
     } catch (error) {

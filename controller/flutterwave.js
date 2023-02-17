@@ -224,58 +224,98 @@ exports.verifyPayment = async(req, res)=>{
 
     try {
         const response = await axios(options);
-        let { status, currency, id, amount, customer, tx_ref, payment_type, amount_settled } = response.data.data;
+        console.log(response.data);
+        if (response.data.status == "success"){
+            let { status, currency, id, amount, customer, tx_ref, payment_type, amount_settled } = response.data.data;
 
-        // console.log(response.data.data);
-        if (payment_type == "card"){
-            // you might want to save card details
-            let userCardDetails = response.data.data.card;
-        }
-        amount = parseInt(amount)
-        let expectedAmount =  parseInt(transactionDetails.amount)
+            // console.log(response.data.data);
+            if (payment_type == "card"){
+                // you might want to save card details
+                let userCardDetails = response.data.data.card;
+            }
+            amount = parseInt(amount)
+            let expectedAmount =  parseInt(transactionDetails.amount)
 
-        if (status === "successful" && (amount = expectedAmount)){
-            //update db set status to success
-            //get and verify if tx_ref exist in db(select * from transactios where tnx_ref = tx_ref && savedAmount == amount_settled )
-            //if exist confirm the amount
-            let updateObject = {
-                paymentStatus: status,
-                paymentMethod: payment_type,
+            if (status === "successful" && (amount = expectedAmount)){
+                //update db set status to success
+                //get and verify if tx_ref exist in db(select * from transactios where tnx_ref = tx_ref && savedAmount == amount_settled )
+                //if exist confirm the amount
+                let updateObject = {
+                    paymentStatus: status,
+                    paymentMethod: payment_type,
+                }
+
+                if(status == "PAID" || status == "successful"){
+                    updateObject.status = "Success"
+                }else if(status == "PARTIALLY_PAID" || status == "PENDING"){
+                    updateObject.status = "Pending"
+                }else{
+                    updateObject.status = "Failed"
+                }
+
+                let updateTnxStatus = await transaction.updateTransaction(updateObject,"tnx_ref", tx_ref)
+                return res.status(200).json({
+                    paymentStatus: status ,
+                    paymentMethod: payment_type, 
+                    settlementAmount: amount,
+                    customer: customer
+                });
 
             }
-
-            if(status == "PAID" || status == "successful"){
-                updateObject.status = "Success"
-            }else if(status == "PARTIALLY_PAID" || status == "PENDING"){
-                updateObject.status = "Pending"
-            }else{
-                updateObject.status = "Failed"
-            }
-
-            let updateTnxStatus = await transaction.updateTransaction(updateObject,"tnx_ref", tx_ref)
-            return res.status(200).json({
-                paymentStatus: status ,
-                paymentMethod: payment_type, 
-                settlementAmount: amount,
-                customer: customer
-            });
-
-        }else{
-            return res.status(500).json({
-                status: false,
-                message: "Error with flutterwave"
-            })
         }
+        // let { status, currency, id, amount, customer, tx_ref, payment_type, amount_settled } = response.data.data;
+
+        // // console.log(response.data.data);
+        // if (payment_type == "card"){
+        //     // you might want to save card details
+        //     let userCardDetails = response.data.data.card;
+        // }
+        // amount = parseInt(amount)
+        // let expectedAmount =  parseInt(transactionDetails.amount)
+
+        // if (status === "successful" && (amount = expectedAmount)){
+        //     //update db set status to success
+        //     //get and verify if tx_ref exist in db(select * from transactios where tnx_ref = tx_ref && savedAmount == amount_settled )
+        //     //if exist confirm the amount
+        //     let updateObject = {
+        //         paymentStatus: status,
+        //         paymentMethod: payment_type,
+
+        //     }
+
+        //     if(status == "PAID" || status == "successful"){
+        //         updateObject.status = "Success"
+        //     }else if(status == "PARTIALLY_PAID" || status == "PENDING"){
+        //         updateObject.status = "Pending"
+        //     }else{
+        //         updateObject.status = "Failed"
+        //     }
+
+        //     let updateTnxStatus = await transaction.updateTransaction(updateObject,"tnx_ref", tx_ref)
+        //     return res.status(200).json({
+        //         paymentStatus: status ,
+        //         paymentMethod: payment_type, 
+        //         settlementAmount: amount,
+        //         customer: customer
+        //     });
+
+        // }else{
+        //     return res.status(500).json({
+        //         status: false,
+        //         message: "Error with flutterwave"
+        //     })
+        // }
         //else payment not successful
 
     } catch (error) {
         console.log(error);
-        return res.status(error.response.status || 404).json({
-            status: false,
-            data :error.response.data,
-            // message: error.response.message,
-            statusCode :(error.response.status)? error.response.status: 404
-        })
+        
+        // return res.status(error.response.status || 404).json({
+        //     status: false,
+        //     data :error.response.data,
+        //     // message: error.response.message,
+        //     statusCode :(error.response.status)? error.response.status: 404
+        // })
     }
 
 }
